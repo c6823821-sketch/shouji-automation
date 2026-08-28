@@ -1,0 +1,10 @@
+{
+  "name": "手机自动化助手",
+  "packageName": "com.shouji.automation",
+  "versionName": "1.0.0",
+  "versionCode": 1,
+  "main": "main.js",
+  "launchArgs": [],
+  "permissions": [],
+  "ignoreUnusedResources": true
+}
