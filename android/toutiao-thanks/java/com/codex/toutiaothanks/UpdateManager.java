@@ -153,12 +153,6 @@ final class UpdateManager {
             Toast.makeText(activity, "正在下载，请稍等", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (!canInstallPackages(activity)) {
-            pendingApk = new File(activity.getExternalFilesDir(null), UpdateFileProvider.FILE_NAME);
-            openInstallPermissionSettings(activity);
-            return;
-        }
-
         downloading = true;
         ProgressDialog progress = new ProgressDialog(activity);
         progress.setTitle("正在下载更新");
