@@ -1,0 +1,27 @@
+name: Publish Android Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify APK
+        run: test -f apk/toutiao-thanks.apk
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" apk/toutiao-thanks.apk \
+            --title "头条点赞感谢 $GITHUB_REF_NAME" \
+            --notes-file CHANGELOG.md

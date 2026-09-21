@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">头条点赞感谢</string>
+    <string name="service_name">头条点赞感谢自动点击</string>
+    <string name="accessibility_description">只在你主动点击“开始”后，读取今日头条当前页面的无障碍文字，自动点击“谢谢”和“私信谢谢点赞”，并向下滑页。不会读取账号密码，不联网。</string>
+</resources>
