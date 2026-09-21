@@ -1,6 +1,7 @@
-# Auto.js 生成
+# Auto.js generated
 *.apk
 *.aab
+!apk/toutiao-thanks.apk
 /build/
 /dist/
 .idea/
