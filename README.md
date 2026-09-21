@@ -7,7 +7,7 @@
 - 稳定版下载：<https://github.com/c6823821-sketch/shouji-automation/releases/latest/download/toutiao-thanks.apk>
 - Releases：<https://github.com/c6823821-sketch/shouji-automation/releases>
 - 源码：`android/toutiao-thanks`
-- 当前版本：`v1.1.2`
+- 当前版本：`v1.1.3`
 
 软件启动后会自动检查本仓库最新 Release。发现新版本后，可以直接在软件内下载并进入安卓安装确认界面。
 

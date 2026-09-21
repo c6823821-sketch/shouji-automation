@@ -16,7 +16,7 @@ $compiled = Join-Path $build 'resources.zip'
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 compile failed' }
 
 $unsigned = Join-Path $build 'unsigned.apk'
-& (Join-Path $bt 'aapt2.exe') link -o $unsigned -I $androidJar --manifest (Join-Path $root 'AndroidManifest.xml') --java $gen --min-sdk-version 26 --target-sdk-version 34 --version-code 4 --version-name 1.1.2 --auto-add-overlay -R $compiled
+& (Join-Path $bt 'aapt2.exe') link -o $unsigned -I $androidJar --manifest (Join-Path $root 'AndroidManifest.xml') --java $gen --min-sdk-version 26 --target-sdk-version 34 --version-code 5 --version-name 1.1.3 --auto-add-overlay -R $compiled
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 link failed' }
 
 $sources = @()
@@ -50,7 +50,7 @@ if (-not (Test-Path $ks)) {
     if ($LASTEXITCODE -ne 0) { throw 'keytool failed' }
 }
 
-$signed = Join-Path $dist 'toutiao-thanks-v1.1.2.apk'
+$signed = Join-Path $dist 'toutiao-thanks-v1.1.3.apk'
 & (Join-Path $bt 'apksigner.bat') sign --ks $ks --ks-key-alias toutiaothanks --ks-pass pass:toutiao123 --key-pass pass:toutiao123 --out $signed $aligned
 if ($LASTEXITCODE -ne 0) { throw 'apksigner failed' }
 

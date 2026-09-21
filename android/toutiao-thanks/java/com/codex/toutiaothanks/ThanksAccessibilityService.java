@@ -27,7 +27,7 @@ public class ThanksAccessibilityService extends AccessibilityService {
     private static final long WAIT_AFTER_PM_MS = 1050L;
     private static final long WAIT_AFTER_SEND_MS = 750L;
     private static final long WAIT_AFTER_BACK_MS = 700L;
-    private static final long WAIT_AFTER_SCROLL_MS = 1250L;
+    private static final long WAIT_AFTER_SCROLL_MS = 1800L;
     private static final int MAX_BACK_ATTEMPTS = 2;
     private static final int MAX_END_ROUNDS = 3;
 
@@ -52,6 +52,7 @@ public class ThanksAccessibilityService extends AccessibilityService {
     private long waitUntil = 0L;
     private int backAttempts = 0;
     private int noMatchRounds = 0;
+    private int noActionChecks = 0;
     private String lastPageSignature = "";
     private String failedClickKey = "";
     private int failedClickCount = 0;
@@ -165,6 +166,7 @@ public class ThanksAccessibilityService extends AccessibilityService {
         }
 
         noMatchRounds = 0;
+        noActionChecks = 0;
         List<RowAction> actions = findThanksActions(nodes);
         RowAction next = firstUnprocessed(actions);
         if (next != null) {
@@ -185,6 +187,7 @@ public class ThanksAccessibilityService extends AccessibilityService {
         pendingCounts = true;
         backAttempts = 0;
         noMatchRounds = 0;
+        noActionChecks = 0;
         lastPageSignature = "";
         failedClickKey = "";
         failedClickCount = 0;
@@ -316,6 +319,7 @@ public class ThanksAccessibilityService extends AccessibilityService {
             pendingKey = "";
             backAttempts = 0;
             noMatchRounds = 0;
+            noActionChecks = 0;
             AutomationController.setStatus("已完成 " + AutomationController.getProcessed() + " 条",
                     "继续处理下一行。");
             return;
@@ -336,11 +340,12 @@ public class ThanksAccessibilityService extends AccessibilityService {
     private void startVerticalScroll(List<NodeSnapshot> nodes) {
         lastPageSignature = pageSignature(nodes);
         noMatchRounds = 0;
-        swipeUp(nodes);
+        noActionChecks = 0;
+        swipeUpOneRow(nodes);
         AutomationController.markScroll();
         phase = "SCROLL";
         waitUntil = now() + WAIT_AFTER_SCROLL_MS;
-        AutomationController.setStatus("当前页处理完了", "只向上滑动，继续找下一行。");
+        AutomationController.setStatus("当前页处理完了", "小步向上滑动，保留重叠内容，避免跳过。");
     }
 
     private void continueScrolling(List<NodeSnapshot> nodes) {
@@ -357,10 +362,12 @@ public class ThanksAccessibilityService extends AccessibilityService {
         if (firstUnprocessed(actions) != null) {
             phase = "FIND";
             noMatchRounds = 0;
+            noActionChecks = 0;
             AutomationController.setStatus("找到下一行", "继续处理。");
             return;
         }
 
+        noActionChecks++;
         String currentSignature = pageSignature(nodes);
         if (currentSignature.equals(lastPageSignature)) {
             noMatchRounds++;
@@ -369,17 +376,27 @@ public class ThanksAccessibilityService extends AccessibilityService {
         }
         lastPageSignature = currentSignature;
 
+        // First wait several times on the same screen.  This gives Toutiao
+        // enough time to render rows after a slow network/page transition.
+        if (noActionChecks < 3) {
+            waitUntil = now() + WAIT_AFTER_SCROLL_MS;
+            AutomationController.setStatus("正在等待新内容",
+                    "第 " + noActionChecks + "/3 次确认，不会马上翻过去。");
+            return;
+        }
+
         if (noMatchRounds >= MAX_END_ROUNDS) {
             AutomationController.complete("已完成：没有更多符合条件的记录");
             AutomationController.setStatus("已完成", AutomationController.summary());
             return;
         }
 
-        swipeUp(nodes);
+        noActionChecks = 0;
+        swipeUpOneRow(nodes);
         AutomationController.markScroll();
         waitUntil = now() + WAIT_AFTER_SCROLL_MS;
         AutomationController.setStatus("继续向下查找",
-                "连续 " + noMatchRounds + "/" + MAX_END_ROUNDS + " 次没有新内容。");
+                "只滑动约一行高度，连续无新内容 " + noMatchRounds + "/" + MAX_END_ROUNDS + " 次。");
     }
 
     private List<RowAction> findThanksActions(List<NodeSnapshot> nodes) {
@@ -388,7 +405,8 @@ public class ThanksAccessibilityService extends AccessibilityService {
         for (NodeSnapshot node : nodes) {
             String text = node.normalized();
             if ("谢谢".equals(text) || "感谢".equals(text) || "谢谢点赞".equals(text)) {
-                if (seen.add(node.identity())) {
+                String visualId = (node.centerX() / 10) + ":" + (node.centerY() / 10);
+                if (seen.add(visualId)) {
                     thanksNodes.add(node);
                 }
             }
@@ -476,45 +494,62 @@ public class ThanksAccessibilityService extends AccessibilityService {
     }
 
     private String buildRowKey(List<NodeSnapshot> nodes, int rowY) {
-        NodeSnapshot liked = null;
-        int likedDistance = Integer.MAX_VALUE;
+        final int band = 310;
+        List<LabelAt> labels = new ArrayList<LabelAt>();
         for (NodeSnapshot node : nodes) {
-            if (!node.normalized().contains("点赞了你的作品")) {
+            if (Math.abs(node.centerY() - rowY) > band) {
                 continue;
             }
-            int distance = Math.abs(node.centerY() - rowY);
-            if (distance < likedDistance) {
-                likedDistance = distance;
-                liked = node;
+            String text = node.normalized();
+            if (TextUtils.isEmpty(text) || isTimeText(text) || isGenericText(text)) {
+                continue;
             }
+            if (text.contains("私信") || "发送".equals(text) || "谢谢".equals(text)
+                    || "感谢".equals(text) || "谢谢点赞".equals(text)) {
+                continue;
+            }
+            labels.add(new LabelAt(text, node.top, node.left));
         }
 
-        String nickname = "";
-        if (liked != null) {
-            int bestBottom = Integer.MIN_VALUE;
+        if (labels.isEmpty()) {
+            // Last-resort fingerprint: include every visible text in the row
+            // band instead of using a position counter that can collide.
             for (NodeSnapshot node : nodes) {
-                String text = node.normalized();
-                if (TextUtils.isEmpty(text) || isGenericText(text) || isTimeText(text)) {
-                    continue;
-                }
-                if (text.contains("点赞了你的作品") || text.contains("私信")
-                        || "谢谢".equals(text) || "感谢".equals(text) || "发送".equals(text)) {
-                    continue;
-                }
-                int gap = liked.top - node.bottom;
-                if (gap >= -8 && gap <= 260) {
-                    if (node.bottom > bestBottom) {
-                        bestBottom = node.bottom;
-                        nickname = text;
+                if (Math.abs(node.centerY() - rowY) <= band) {
+                    String text = node.normalized();
+                    if (!TextUtils.isEmpty(text)) {
+                        labels.add(new LabelAt(text, node.top, node.left));
                     }
                 }
             }
         }
 
-        if (TextUtils.isEmpty(nickname)) {
-            nickname = "记录" + Math.max(1, rowY / 200);
+        Collections.sort(labels, new Comparator<LabelAt>() {
+            @Override
+            public int compare(LabelAt left, LabelAt right) {
+                int byTop = Integer.compare(left.top, right.top);
+                return byTop != 0 ? byTop : Integer.compare(left.left, right.left);
+            }
+        });
+
+        StringBuilder key = new StringBuilder();
+        Set<String> seen = new HashSet<String>();
+        for (LabelAt label : labels) {
+            if (!seen.add(label.text)) {
+                continue;
+            }
+            if (key.length() > 0) {
+                key.append('|');
+            }
+            key.append(label.text);
+            if (seen.size() >= 6) {
+                break;
+            }
         }
-        return nickname;
+        if (key.length() == 0) {
+            return "无文字行";
+        }
+        return key.toString();
     }
 
     private boolean isLikesPage(List<NodeSnapshot> nodes) {
@@ -606,7 +641,7 @@ public class ThanksAccessibilityService extends AccessibilityService {
         return dispatchGesture(gesture, null, null);
     }
 
-    private void swipeUp(List<NodeSnapshot> nodes) {
+    private void swipeUpOneRow(List<NodeSnapshot> nodes) {
         int width = 1080;
         int height = 2400;
         for (NodeSnapshot node : nodes) {
@@ -614,12 +649,39 @@ public class ThanksAccessibilityService extends AccessibilityService {
             height = Math.max(height, node.bottom);
         }
 
-        // Explicit vertical gesture: both points have exactly the same X,
-        // so this cannot become a left/right swipe.
+        List<Integer> thanksY = new ArrayList<Integer>();
+        for (NodeSnapshot node : nodes) {
+            String value = node.normalized();
+            if ("谢谢".equals(value) || "感谢".equals(value) || "谢谢点赞".equals(value)) {
+                thanksY.add(node.centerY());
+            }
+        }
+        Collections.sort(thanksY);
+        List<Integer> gaps = new ArrayList<Integer>();
+        for (int index = 1; index < thanksY.size(); index++) {
+            int gap = thanksY.get(index) - thanksY.get(index - 1);
+            if (gap >= Math.round(height * 0.07f) && gap <= Math.round(height * 0.40f)) {
+                gaps.add(gap);
+            }
+        }
+
+        int step;
+        if (!gaps.isEmpty()) {
+            Collections.sort(gaps);
+            step = gaps.get(gaps.size() / 2);
+        } else {
+            step = Math.round(height * 0.28f);
+        }
+        step = Math.max(Math.round(height * 0.20f), Math.min(step, Math.round(height * 0.32f)));
+
+        // Keeping some overlap is essential: a row that was just off-screen
+        // will still be visible after this small swipe and can be processed.
+        int startY = Math.round(height * 0.72f);
+        int endY = Math.max(Math.round(height * 0.22f), startY - step);
         int x = width / 2;
         Path path = new Path();
-        path.moveTo(x, Math.round(height * 0.72f));
-        path.lineTo(x, Math.round(height * 0.33f));
+        path.moveTo(x, startY);
+        path.lineTo(x, endY);
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(new GestureDescription.StrokeDescription(path, 0L, 650L))
                 .build();
@@ -659,6 +721,18 @@ public class ThanksAccessibilityService extends AccessibilityService {
 
     private static long now() {
         return android.os.SystemClock.uptimeMillis();
+    }
+
+    private static final class LabelAt {
+        final String text;
+        final int top;
+        final int left;
+
+        LabelAt(String text, int top, int left) {
+            this.text = text;
+            this.top = top;
+            this.left = left;
+        }
     }
 
     private static final class NodeSnapshot {
